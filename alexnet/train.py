@@ -18,11 +18,14 @@ parser.add_argument("-d", "--dataset", required=True,
                     help="Path to folder containing image-net.")
 parser.add_argument("-o", "--output", required=True,
                     help="Path to output folder.")
+parser.add_argument("-r", "--resume", default=False,
+                    help="Resume training.")
 
 args = parser.parse_args()
 config = vars(args)
 dataset_folder_path = config['dataset']
 output_path = config['output']
+resume = config['resume']
 
 def fancy_pca(img):
     print(img)
@@ -73,6 +76,9 @@ def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d):
         torch.nn.init.normal_(m.weight, mean=0.0, std=0.01)
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
+
+if resume:
+    print(os.listdir(output_path))
 
 for seed in range(3):
     experiment_path = f'{output_path}/seed_{seed}/'
