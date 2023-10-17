@@ -11,6 +11,9 @@ import argparse
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.decomposition import PCA
 
+EPOCHS = 2
+SEEDS = 3
+
 parser = argparse.ArgumentParser(description="Just an example",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -19,7 +22,8 @@ parser.add_argument("-d", "--dataset", required=True,
 parser.add_argument("-o", "--output", required=True,
                     help="Path to output folder.")
 parser.add_argument("-r", "--resume", default=False,
-                    help="Resume training.")
+                    help="Resume training.",
+                    action=argparse.BooleanOptionalAction)
 
 args = parser.parse_args()
 config = vars(args)
@@ -77,10 +81,55 @@ def init_weights(m):
         torch.nn.init.normal_(m.weight, mean=0.0, std=0.01)
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
+resume_model = None
+resume_seed = 0
+resume_epoch = 0
 if resume:
-    print(os.listdir(output_path))
+    # List all experiment folders. Experiments are ordered by seed.
+    checkpoint_folders = list(filter(lambda x: x.startswith("seed_"), os.listdir(output_path)))
+    checkpoint_numbers = sorted([int(folder[len("seed_"):]) for folder in checkpoint_folders], reverse=True)
 
-for seed in range(3):
+    if len(checkpoint_numbers) == SEEDS:
+        print("All experiments were completed.")
+        exit()
+    if len(checkpoint_numbers) == 0:
+        print(f"No experiments to resume at {output_path}.")
+        exit()
+
+    latest_writer_datetime = datetime.max
+    latest_writer_name = None
+    for number in checkpoint_numbers:
+        latest_folder = os.listdir(f"{output_path}/seed_{number}")
+        for file in latest_folder:
+            try:
+                file_time = datetime.strptime(file, '%Y%m%d_%H%M%S')
+                if latest_writer_datetime > file_time:
+                    latest_writer_datetime = file_time
+                    latest_writer_name = file
+                    resume_seed = number
+                
+            except(ValueError):
+                print(f"Cannot extract datetime from file: {output_path}/seed_{number}/{file}")
+        
+        if latest_writer_datetime == datetime.max:
+            print(f"No valid writers to resume for seed {number}, trying next seed.")
+        else:
+            print(f"Found writer to resule for seed {number}. Finding model.")
+            break
+
+    if latest_writer_datetime == datetime.max:
+        print(f"No valid writers found for any seed.")
+        exit()
+
+    model_files = os.listdir(f"{output_path}/seed_{number}/models")
+    model_files = sorted(model_files, reverse=True)
+    if len(model_files) == 0:
+        print("No models found.")
+        exit()
+
+    result_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}")
+
+for seed in range(resume_seed, SEEDS):
     experiment_path = f'{output_path}/seed_{seed}/'
     modeling_path = f'{experiment_path}/models'
     os.makedirs(modeling_path, exist_ok=True)
@@ -90,17 +139,17 @@ for seed in range(3):
     np.random.seed(seed)
     torch.cuda.manual_seed(seed)
 
-    model = torchvision.models.AlexNet()
-    model.apply(init_weights) # Initialize weights with specific function. 
+    if resume and resume_model is not None:
+        model = resume_model
+    else:
+        model = torchvision.models.AlexNet()
+        model.apply(init_weights) # Initialize weights with specific function. 
     model.eval().cuda()  # Needs CUDA, don't bother on CPUs
 
     # Set fixed seeds for everything else.
     torch.manual_seed(0)
     np.random.seed(0)
     torch.cuda.manual_seed(0)
-
-    # Writer will output to ./runs/ directory by default
-    # writer = SummaryWriter(log_dir=experiment_path)
 
     # image-net 2012 specific values.
     mean = (0.485, 0.456, 0.406)
@@ -124,9 +173,12 @@ for seed in range(3):
                 ]
             )
 
-    training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
-    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="train", transform=training_transform)
+    print("Starting dataset load.")
+    dataset_timer = datetime.now()
+    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
+    training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="train", transform=training_transform)
     validation_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
+    print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
 
     validation_dataloader = DataLoader(
                 validation_dataset,
@@ -153,6 +205,7 @@ for seed in range(3):
         running_loss = 0.
         last_loss = 0.
 
+        batch_timer = datetime.now()
         # Here, we use enumerate(training_loader) instead of
         # iter(training_loader) so that we can track the batch
         # index and do some intra-epoch reporting
@@ -180,11 +233,12 @@ for seed in range(3):
 
             # Gather data and report
             running_loss += loss.item()
-            # if i % 1000 == 999:
-            if i % 10 == 9:
-                # last_loss = running_loss / 1000 # loss per batch
-                last_loss = running_loss / 10 # loss per batch
-                print('  batch {} loss: {}'.format(i + 1, last_loss))
+            if i % 1000 == 999:
+            # if i % 10 == 9:
+                last_loss = running_loss / 1000 # loss per batch
+                # last_loss = running_loss / 10 # loss per batch
+                print(f'  batch {i + 1} loss: {last_loss} duration: {datetime.now() - batch_timer}')
+                batch_timer = datetime.now()
                 tb_x = epoch_index * len(training_dataloader) + i + 1
                 tb_writer.add_scalar('Loss/train', last_loss, tb_x)
                 running_loss = 0.
@@ -196,10 +250,9 @@ for seed in range(3):
     writer = SummaryWriter(f'{experiment_path}/{timestamp}')
     epoch_number = 0
 
-    EPOCHS = 90
-
     best_vloss = 1_000_000.
 
+    epoch_timer = datetime.now()
     for epoch in range(EPOCHS):
         print('EPOCH {}:'.format(epoch_number + 1))
 
@@ -223,7 +276,8 @@ for seed in range(3):
                 running_vloss += vloss
 
         avg_vloss = running_vloss / (i + 1)
-        print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
+        print(f'LOSS train {avg_loss} valid {avg_vloss} duration: {dateime.now() - epoch_timer}')
+        epoch_timer = datetime.now()
 
         # Log the running loss averaged per batch
         # for both training and validation
