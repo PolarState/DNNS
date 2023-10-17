@@ -7,11 +7,22 @@ from torchvision.transforms import v2
 from torchvision import transforms
 import torch
 import torchvision
-import imagenet_dataset
-from tqdm import tqdm
+import argparse
 from torch.utils.tensorboard import SummaryWriter
-from typing import Tuple, Union, Any
 from sklearn.decomposition import PCA
+
+parser = argparse.ArgumentParser(description="Just an example",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+parser.add_argument("-d", "--dataset", required=True,
+                    help="Path to folder containing image-net.")
+parser.add_argument("-o", "--output", required=True,
+                    help="Path to output folder.")
+
+args = parser.parse_args()
+config = vars(args)
+dataset_folder_path = config['dataset']
+output_path = config['output']
 
 def fancy_pca(img):
     print(img)
@@ -64,7 +75,9 @@ def init_weights(m):
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
 for seed in range(3):
-    experiment_path = f'./weight_mining/color_jitter/seed_{seed}/'
+    experiment_path = f'{output_path}/seed_{seed}/'
+    modeling_path = f'{experiment_path}/models'
+    os.makedirs(modeling_path, exist_ok=True)
 
     # Set progressive seeds for model initalization.
     torch.manual_seed(seed)
@@ -105,9 +118,9 @@ for seed in range(3):
                 ]
             )
 
-    # training_dataset = torchvision.datasets.imagenet.ImageNet("/mnt/data/imagenet/01k/", split="val", transform=training_transform)
-    training_dataset = torchvision.datasets.imagenet.ImageNet("/mnt/data/imagenet/01k/", split="train", transform=training_transform)
-    validation_dataset = torchvision.datasets.imagenet.ImageNet("/mnt/data/imagenet/01k/", split="val", transform=validation_transform)
+    training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
+    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="train", transform=training_transform)
+    validation_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
 
     validation_dataloader = DataLoader(
                 validation_dataset,
@@ -161,8 +174,10 @@ for seed in range(3):
 
             # Gather data and report
             running_loss += loss.item()
-            if i % 1000 == 999:
-                last_loss = running_loss / 1000 # loss per batch
+            # if i % 1000 == 999:
+            if i % 10 == 9:
+                # last_loss = running_loss / 1000 # loss per batch
+                last_loss = running_loss / 10 # loss per batch
                 print('  batch {} loss: {}'.format(i + 1, last_loss))
                 tb_x = epoch_index * len(training_dataloader) + i + 1
                 tb_writer.add_scalar('Loss/train', last_loss, tb_x)
@@ -214,7 +229,7 @@ for seed in range(3):
         # Track best performance, and save the model's state
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
-            model_path = 'model_{}_{}'.format(timestamp, epoch_number)
-            # torch.save(model.state_dict(), model_path)
+            model_path = f'{modeling_path}/{timestamp}_{epoch_number}'
+            torch.save(model.state_dict(), model_path)
 
         epoch_number += 1
