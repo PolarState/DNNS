@@ -127,7 +127,8 @@ if resume:
         print("No models found.")
         exit()
 
-    result_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}")
+    resume_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}")
+    resume_epoch = model_files[0][16:]
 
 for seed in range(resume_seed, SEEDS):
     experiment_path = f'{output_path}/seed_{seed}/'
@@ -248,17 +249,16 @@ for seed in range(resume_seed, SEEDS):
     # Initializing in a separate cell so we can easily add more epochs to the same run
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     writer = SummaryWriter(f'{experiment_path}/{timestamp}')
-    epoch_number = 0
 
     best_vloss = 1_000_000.
 
     epoch_timer = datetime.now()
-    for epoch in range(EPOCHS):
-        print('EPOCH {}:'.format(epoch_number + 1))
+    for epoch in range(resume_epoch, EPOCHS):
+        print('EPOCH {}:'.format(epoch))
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
-        avg_loss = train_one_epoch(epoch_number, writer)
+        avg_loss = train_one_epoch(epoch, writer)
 
         running_vloss = 0.0
 
@@ -276,20 +276,18 @@ for seed in range(resume_seed, SEEDS):
                 running_vloss += vloss
 
         avg_vloss = running_vloss / (i + 1)
-        print(f'LOSS train {avg_loss} valid {avg_vloss} duration: {dateime.now() - epoch_timer}')
+        print(f'LOSS train {avg_loss} valid {avg_vloss} duration: {datetime.now() - epoch_timer}')
         epoch_timer = datetime.now()
 
         # Log the running loss averaged per batch
         # for both training and validation
         writer.add_scalars('Training vs. Validation Loss',
                         { 'Training' : avg_loss, 'Validation' : avg_vloss },
-                        epoch_number + 1)
+                        epoch)
         writer.flush()
 
         # Track best performance, and save the model's state
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
-            model_path = f'{modeling_path}/{timestamp}_{epoch_number}'
+            model_path = f'{modeling_path}/{timestamp}_{epoch}'
             torch.save(model.state_dict(), model_path)
-
-        epoch_number += 1
