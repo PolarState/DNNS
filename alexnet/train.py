@@ -10,6 +10,9 @@ import torchvision
 import argparse
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.decomposition import PCA
+from PIL import ImageFile
+
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 EPOCHS = 90
 SEEDS = 10
@@ -127,7 +130,7 @@ if resume:
         print("No models found.")
         exit()
 
-    resume_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}")
+    resume_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}", map_location=torch.device('cuda'))
     resume_epoch = model_files[0][16:]
 
 for seed in range(resume_seed, SEEDS):
@@ -145,7 +148,7 @@ for seed in range(resume_seed, SEEDS):
     else:
         model = torchvision.models.AlexNet()
         model.apply(init_weights) # Initialize weights with specific function. 
-    model.eval().cuda()  # Needs CUDA, don't bother on CPUs
+        model.eval().cuda()  # Needs CUDA, don't bother on CPUs
 
     # Set fixed seeds for everything else.
     torch.manual_seed(0)
@@ -191,7 +194,7 @@ for seed in range(resume_seed, SEEDS):
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=160,
+                batch_size=128,
                 num_workers=8,
                 shuffle=True,
                 drop_last=False,
@@ -291,4 +294,4 @@ for seed in range(resume_seed, SEEDS):
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
             model_path = f'{modeling_path}/{timestamp}_{epoch}'
-            torch.save(model.state_dict(), model_path)
+            torch.save(model, model_path)
