@@ -11,8 +11,8 @@ import argparse
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.decomposition import PCA
 
-EPOCHS = 2
-SEEDS = 3
+EPOCHS = 90
+SEEDS = 10
 
 parser = argparse.ArgumentParser(description="Just an example",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -191,7 +191,7 @@ for seed in range(resume_seed, SEEDS):
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=128,
+                batch_size=160,
                 num_workers=8,
                 shuffle=True,
                 drop_last=False,
@@ -235,9 +235,7 @@ for seed in range(resume_seed, SEEDS):
             # Gather data and report
             running_loss += loss.item()
             if i % 1000 == 999:
-            # if i % 10 == 9:
                 last_loss = running_loss / 1000 # loss per batch
-                # last_loss = running_loss / 10 # loss per batch
                 print(f'  batch {i + 1} loss: {last_loss} duration: {datetime.now() - batch_timer}')
                 batch_timer = datetime.now()
                 tb_x = epoch_index * len(training_dataloader) + i + 1
@@ -285,6 +283,9 @@ for seed in range(resume_seed, SEEDS):
                         { 'Training' : avg_loss, 'Validation' : avg_vloss },
                         epoch)
         writer.flush()
+        
+        writer.add_scalar('LearningRate', optimizer.param_groups[0]["lr"], epoch)
+        scheduler.step(avg_vloss)
 
         # Track best performance, and save the model's state
         if avg_vloss < best_vloss:
