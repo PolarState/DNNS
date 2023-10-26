@@ -15,7 +15,7 @@ from PIL import ImageFile
 # ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 EPOCHS = 90
-SEEDS = 10
+SEEDS = 20
 
 parser = argparse.ArgumentParser(description="Just an example",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -85,7 +85,7 @@ def init_weights(m):
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
 resume_model = None
-resume_seed = 0
+resume_seed = 10
 resume_epoch = 0
 if resume:
     # List all experiment folders. Experiments are ordered by seed.
@@ -110,6 +110,7 @@ if resume:
                     latest_writer_datetime = file_time
                     latest_writer_name = file
                     resume_seed = number
+                    print(f"latest file: {latest_writer_name}")
                 
             except(ValueError):
                 print(f"Cannot extract datetime from file: {output_path}/seed_{number}/{file}")
@@ -125,13 +126,14 @@ if resume:
         exit()
 
     model_files = os.listdir(f"{output_path}/seed_{number}/models")
-    model_files = sorted(model_files, reverse=True)
+    model_files = sorted(model_files, reverse=True, key=lambda x: int(x[16:]))
     if len(model_files) == 0:
         print("No models found.")
         exit()
 
     resume_model = torch.load(f"{output_path}/seed_{number}/models/{model_files[0]}", map_location=torch.device('cuda'))
-    resume_epoch = model_files[0][16:]
+    resume_epoch = int(model_files[0][16:])
+    print(f"resuming from EPOCH: {resume_epoch}")
 
 for seed in range(resume_seed, SEEDS):
     experiment_path = f'{output_path}/seed_{seed}/'
@@ -194,7 +196,7 @@ for seed in range(resume_seed, SEEDS):
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=128,
+                batch_size=256,
                 num_workers=8,
                 shuffle=True,
                 drop_last=False,
