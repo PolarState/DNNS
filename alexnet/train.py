@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
 from torch.utils.data import DataLoader
-from torchvision.transforms import v2
 from torchvision import transforms
 import torch
 import torchvision
@@ -11,6 +10,8 @@ import argparse
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.decomposition import PCA
 from PIL import ImageFile
+import time
+import imagenet_dataset
 
 # ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -136,6 +137,7 @@ if resume:
     print(f"resuming from EPOCH: {resume_epoch}")
 
 for seed in range(resume_seed, SEEDS):
+    print(f"Started seed {seed}")
     experiment_path = f'{output_path}/seed_{seed}/'
     modeling_path = f'{experiment_path}/models'
     os.makedirs(modeling_path, exist_ok=True)
@@ -171,33 +173,46 @@ for seed in range(resume_seed, SEEDS):
 
     training_transform = transforms.Compose(
                 [
-                    transforms.Resize(256),
-                    transforms.FiveCrop(224),
-                    transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+                    # transforms.Resize(256),
+                    # transforms.ToTensor(),
+                    # transforms.FiveCrop(224),
+                    # transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
                     transforms.ColorJitter(),
+                    transforms.RandomCrop(224),
                     transforms.Normalize(mean, std),
                 ]
             )
 
     print("Starting dataset load.")
     dataset_timer = datetime.now()
-    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
-    training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="train", transform=training_transform)
-    validation_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
-    print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
 
+    def is_valid_file(path):
+        return os.path.splitext(path)[1] == '.pt'
+
+    def load_image(path):
+        return torch.load(path)
+
+    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
+    training_dataset = imagenet_dataset.ImageNet(dataset_folder_path,
+                                                 split="train",
+                                                 transform=training_transform,
+                                                 is_valid_file=is_valid_file,
+                                                 loader=load_image)
+    validation_dataset = imagenet_dataset.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
+    print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
+# torch.Size([1, 256, 340]) /mnt/data/imagenet/01k_cpy/train/n03126707/n03126707_2562.pt                                                                                                                                
     validation_dataloader = DataLoader(
                 validation_dataset,
                 batch_size=128,
-                num_workers=8,
+                num_workers=16,
                 shuffle=False,
                 drop_last=False,
                 pin_memory=True
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=256,
-                num_workers=8,
+                batch_size=2048,
+                num_workers=16,
                 shuffle=True,
                 drop_last=False,
                 pin_memory=True
@@ -215,17 +230,25 @@ for seed in range(resume_seed, SEEDS):
         # Here, we use enumerate(training_loader) instead of
         # iter(training_loader) so that we can track the batch
         # index and do some intra-epoch reporting
+        
+        # end = time.time()
         for i, data in enumerate(training_dataloader):
             # Every data instance is an input + label pair
             inputs, labels = data # input is a 5d tensor, labels is 2d
+            # print(f"data time: {time.time() - end}")
+            # end = time.time()
 
-            _, ncrops, c, h, w = inputs.size()
-            inputs = inputs.view(-1, c, h, w) # fuse batch size and ncrops
-            labels = torch.reshape(torch.stack([labels for _ in range(ncrops)]).T, (-1,))
+            # _, ncrops, c, h, w = inputs.size()
+            # inputs = inputs.view(-1, c, h, w) # fuse batch size and ncrops
+            # labels = torch.reshape(torch.stack([labels for _ in range(ncrops)]).T, (-1,))
+            # print(f"reshape time: {time.time() - end}")
+            # end = time.time()
             inputs, labels = inputs.cuda(), labels.cuda() # add this line
 
+            # print(f"cuda xfer time: {time.time() - end}")
+            # end = time.time()
             # Zero your gradients for every batch!
-            optimizer.zero_grad()
+            model.zero_grad(set_to_none=True)
 
             # Make predictions for this batch
             outputs = model(inputs)
@@ -236,16 +259,18 @@ for seed in range(resume_seed, SEEDS):
 
             # Adjust learning weights
             optimizer.step()
+            # print(f"cuda time: {time.time() - end}")
 
             # Gather data and report
             running_loss += loss.item()
-            if i % 1000 == 999:
-                last_loss = running_loss / 1000 # loss per batch
-                print(f'  batch {i + 1} loss: {last_loss} duration: {datetime.now() - batch_timer}')
+            if i % 100 == 99:
+                last_loss = running_loss / 100 # loss per batch
+                print(f'  batch {i + 1} loss: {last_loss} duration: {datetime.now() - batch_timer} avg duration: {(datetime.now() - batch_timer) / 100}')
                 batch_timer = datetime.now()
                 tb_x = epoch_index * len(training_dataloader) + i + 1
                 tb_writer.add_scalar('Loss/train', last_loss, tb_x)
                 running_loss = 0.
+            # end = time.time()
 
         return last_loss
 
@@ -256,11 +281,19 @@ for seed in range(resume_seed, SEEDS):
     best_vloss = 1_000_000.
 
     epoch_timer = datetime.now()
+    times = []
     for epoch in range(resume_epoch, EPOCHS):
         print('EPOCH {}:'.format(epoch))
+        torch.cuda.synchronize()
+        start_epoch = time.time()
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
+        torch.cuda.synchronize()
+        end_epoch = time.time()
+        elapsed = end_epoch - start_epoch
+        times.append(elapsed)
+        print(elapsed)
         avg_loss = train_one_epoch(epoch, writer)
 
         running_vloss = 0.0
@@ -292,8 +325,14 @@ for seed in range(resume_seed, SEEDS):
         writer.add_scalar('LearningRate', optimizer.param_groups[0]["lr"], epoch)
         scheduler.step(avg_vloss)
 
-        # Track best performance, and save the model's state
+        # Track best performance
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
-            model_path = f'{modeling_path}/{timestamp}_{epoch}'
-            torch.save(model, model_path)
+
+        # Save the model's state.
+        model_path = f'{modeling_path}/{timestamp}_{epoch}'
+        torch.save(model, model_path)
+
+    # Reset resume configs
+    resume_epoch = 0
+    resume = None
