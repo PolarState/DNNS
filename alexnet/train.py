@@ -1,5 +1,4 @@
 import os
-import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
 from torch.utils.data import DataLoader
@@ -8,8 +7,6 @@ import torch
 import torchvision
 import argparse
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.decomposition import PCA
-from PIL import ImageFile
 import time
 import imagenet_dataset
 
