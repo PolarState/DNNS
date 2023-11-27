@@ -35,46 +35,6 @@ dataset_folder_path = config['dataset']
 output_path = config['output']
 resume = config['resume']
 
-def fancy_pca(img):
-    print(img)
-    covariance_matrix = torch.cov(img)
-    (eigenvalues, eigenvectors) = torch.linalg.eig(covariance_matrix)
-    sort_perm = eigenvalues[::-1].argsort()
-    eigenvalues[::-1].sort()
-    eigenvectors = eigenvectors[:, sort_perm]
-
-    # get [p1, p2, p3]
-    m1 = torch.column_stack((eigenvectors))
-
-    # get 3x1 matrix of eigen values multiplied by random variable draw from normal
-    # distribution with mean of 0 and standard deviation of 0.1
-    m2 = torch.zeros((3, 1))
-    # according to the paper alpha should only be draw once per augmentation (not once per channel)
-    alpha = np.random.normal(0, 0.1)
-
-    # broad cast to speed things up
-    m2[:, 0] = alpha * eigenvalues[:]
-
-    print(m2)
-    print(m1)
-
-    # this is the vector that we're going to add to each pixel in a moment
-    add_vect = m1 * m2
-
-    print(add_vect)
-
-    for idx in range(3):   # RGB
-        orig_img[..., idx] += add_vect[idx]
-
-    # for image processing it was found that working with float 0.0 to 1.0
-    # was easier than integers between 0-255
-    # orig_img /= 255.0
-    orig_img = np.clip(orig_img, 0.0, 255.0)
-
-    # orig_img *= 255
-    orig_img = orig_img.astype(np.uint8)
-
-
 os.environ["CUBLAS_WORKSPACE_CONFIG"]=":16:8"
 # One of the pooling operations is not deterministic. So we enable warn only.
 torch.use_deterministic_algorithms(mode=True, warn_only=True)
