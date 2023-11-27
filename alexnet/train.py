@@ -28,12 +28,15 @@ parser.add_argument("-o", "--output", required=True,
 parser.add_argument("-r", "--resume", default=False,
                     help="Resume training.",
                     action=argparse.BooleanOptionalAction)
+parser.add_argument("--resume_seed", default=0, required=False,
+                    help="Manual override of default seed to start linear search from. This does not work with resume flag.",)
 
 args = parser.parse_args()
 config = vars(args)
 dataset_folder_path = config['dataset']
 output_path = config['output']
 resume = config['resume']
+resume_seed = config['resume_seed']
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"]=":16:8"
 # One of the pooling operations is not deterministic. So we enable warn only.
@@ -46,7 +49,6 @@ def init_weights(m):
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
 resume_model = None
-resume_seed = 10
 resume_epoch = 0
 if resume:
     # List all experiment folders. Experiments are ordered by seed.
