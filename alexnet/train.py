@@ -121,7 +121,7 @@ for seed in range(resume_seed, SEEDS):
     np.random.seed(0)
     torch.cuda.manual_seed(0)
 
-    # image-net 2012 specific values.
+    # Image-net 2012 specific values.
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     validation_transform = transforms.Compose(
@@ -135,10 +135,6 @@ for seed in range(resume_seed, SEEDS):
 
     training_transform = transforms.Compose(
                 [
-                    # transforms.Resize(256),
-                    # transforms.ToTensor(),
-                    # transforms.FiveCrop(224),
-                    # transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
                     transforms.ColorJitter(),
                     transforms.RandomCrop(224),
                     transforms.Normalize(mean, std),
@@ -154,7 +150,6 @@ for seed in range(resume_seed, SEEDS):
     def load_image(path):
         return torch.load(path)
 
-    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
     training_dataset = imagenet_dataset.ImageNet(dataset_folder_path,
                                                  split="train",
                                                  transform=training_transform,
@@ -162,7 +157,6 @@ for seed in range(resume_seed, SEEDS):
                                                  loader=load_image)
     validation_dataset = imagenet_dataset.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
     print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
-# torch.Size([1, 256, 340]) /mnt/data/imagenet/01k_cpy/train/n03126707/n03126707_2562.pt                                                                                                                                
     validation_dataloader = DataLoader(
                 validation_dataset,
                 batch_size=128,
