@@ -27,6 +27,8 @@ parser.add_argument("-r", "--resume", default=False,
                     action=argparse.BooleanOptionalAction)
 parser.add_argument("--resume_seed", default=0, required=False,
                     help="Manual override of default seed to start linear search from. This does not work with resume flag.",)
+parser.add_argument("--batch_size", default=64, required=False,
+                    help="Training / validation batch size.",)
 
 args = parser.parse_args()
 config = vars(args)
@@ -34,6 +36,7 @@ dataset_folder_path = config['dataset']
 output_path = config['output']
 resume = config['resume']
 resume_seed = config['resume_seed']
+batch_size = config['batch_size']
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"]=":16:8"
 # One of the pooling operations is not deterministic. So we enable warn only.
@@ -156,7 +159,7 @@ for seed in range(resume_seed, SEEDS):
     print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
     validation_dataloader = DataLoader(
                 validation_dataset,
-                batch_size=128,
+                batch_size=batch_size,
                 num_workers=16,
                 shuffle=False,
                 drop_last=False,
@@ -164,7 +167,7 @@ for seed in range(resume_seed, SEEDS):
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=2048,
+                batch_size=batch_size,
                 num_workers=16,
                 shuffle=True,
                 drop_last=False,
