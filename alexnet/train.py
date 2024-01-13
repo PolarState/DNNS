@@ -1,5 +1,4 @@
 import os
-import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
 from torch.utils.data import DataLoader
@@ -8,8 +7,6 @@ import torch
 import torchvision
 import argparse
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.decomposition import PCA
-from PIL import ImageFile
 import time
 import imagenet_dataset
 
@@ -28,52 +25,18 @@ parser.add_argument("-o", "--output", required=True,
 parser.add_argument("-r", "--resume", default=False,
                     help="Resume training.",
                     action=argparse.BooleanOptionalAction)
+parser.add_argument("--resume_seed", default=0, required=False,
+                    help="Manual override of default seed to start linear search from. This does not work with resume flag.",)
+parser.add_argument("--batch_size", default=64, required=False,
+                    help="Training / validation batch size.",)
 
 args = parser.parse_args()
 config = vars(args)
 dataset_folder_path = config['dataset']
 output_path = config['output']
 resume = config['resume']
-
-def fancy_pca(img):
-    print(img)
-    covariance_matrix = torch.cov(img)
-    (eigenvalues, eigenvectors) = torch.linalg.eig(covariance_matrix)
-    sort_perm = eigenvalues[::-1].argsort()
-    eigenvalues[::-1].sort()
-    eigenvectors = eigenvectors[:, sort_perm]
-
-    # get [p1, p2, p3]
-    m1 = torch.column_stack((eigenvectors))
-
-    # get 3x1 matrix of eigen values multiplied by random variable draw from normal
-    # distribution with mean of 0 and standard deviation of 0.1
-    m2 = torch.zeros((3, 1))
-    # according to the paper alpha should only be draw once per augmentation (not once per channel)
-    alpha = np.random.normal(0, 0.1)
-
-    # broad cast to speed things up
-    m2[:, 0] = alpha * eigenvalues[:]
-
-    print(m2)
-    print(m1)
-
-    # this is the vector that we're going to add to each pixel in a moment
-    add_vect = m1 * m2
-
-    print(add_vect)
-
-    for idx in range(3):   # RGB
-        orig_img[..., idx] += add_vect[idx]
-
-    # for image processing it was found that working with float 0.0 to 1.0
-    # was easier than integers between 0-255
-    # orig_img /= 255.0
-    orig_img = np.clip(orig_img, 0.0, 255.0)
-
-    # orig_img *= 255
-    orig_img = orig_img.astype(np.uint8)
-
+resume_seed = config['resume_seed']
+batch_size = config['batch_size']
 
 os.environ["CUBLAS_WORKSPACE_CONFIG"]=":16:8"
 # One of the pooling operations is not deterministic. So we enable warn only.
@@ -86,7 +49,6 @@ def init_weights(m):
         torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
 resume_model = None
-resume_seed = 10
 resume_epoch = 0
 if resume:
     # List all experiment folders. Experiments are ordered by seed.
@@ -159,7 +121,7 @@ for seed in range(resume_seed, SEEDS):
     np.random.seed(0)
     torch.cuda.manual_seed(0)
 
-    # image-net 2012 specific values.
+    # Image-net 2012 specific values.
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
     validation_transform = transforms.Compose(
@@ -173,10 +135,6 @@ for seed in range(resume_seed, SEEDS):
 
     training_transform = transforms.Compose(
                 [
-                    # transforms.Resize(256),
-                    # transforms.ToTensor(),
-                    # transforms.FiveCrop(224),
-                    # transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
                     transforms.ColorJitter(),
                     transforms.RandomCrop(224),
                     transforms.Normalize(mean, std),
@@ -192,7 +150,6 @@ for seed in range(resume_seed, SEEDS):
     def load_image(path):
         return torch.load(path)
 
-    # training_dataset = torchvision.datasets.imagenet.ImageNet(dataset_folder_path, split="val", transform=training_transform)
     training_dataset = imagenet_dataset.ImageNet(dataset_folder_path,
                                                  split="train",
                                                  transform=training_transform,
@@ -200,10 +157,9 @@ for seed in range(resume_seed, SEEDS):
                                                  loader=load_image)
     validation_dataset = imagenet_dataset.ImageNet(dataset_folder_path, split="val", transform=validation_transform)
     print(f"Dataset loaded in: {datetime.now() - dataset_timer}")
-# torch.Size([1, 256, 340]) /mnt/data/imagenet/01k_cpy/train/n03126707/n03126707_2562.pt                                                                                                                                
     validation_dataloader = DataLoader(
                 validation_dataset,
-                batch_size=128,
+                batch_size=batch_size,
                 num_workers=16,
                 shuffle=False,
                 drop_last=False,
@@ -211,7 +167,7 @@ for seed in range(resume_seed, SEEDS):
             )
     training_dataloader = DataLoader(
                 training_dataset,
-                batch_size=2048,
+                batch_size=batch_size,
                 num_workers=16,
                 shuffle=True,
                 drop_last=False,
