@@ -82,8 +82,10 @@ torch.use_deterministic_algorithms(mode=True, warn_only=True)
 # Function to initalize weights in network via normal distribution.
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d):
-        torch.nn.init.normal_(m.weight, mean=0.0, std=0.01)
-        torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
+        if m.weight != None:
+            torch.nn.init.normal_(m.weight, mean=0.0, std=0.01)
+        if m.bias != None:
+            torch.nn.init.normal_(m.bias, mean=0.0, std=0.01)
 
 resume_model = None
 resume_seed = 10
